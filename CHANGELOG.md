@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0 (2024-03-20)
+
+### Features
+
+- [**breaking**] Infallible `HugrMut` methods ([#869](https://github.com/Cobord/hugr/pull/869))
+- Ancilla support in CircuitBuilder ([#867](https://github.com/Cobord/hugr/pull/867))
+- `CircuitBuilder::append_with_output_arr` ([#871](https://github.com/Cobord/hugr/pull/871))
+- [**breaking**] Make some `Container` methods infallible ([#872](https://github.com/Cobord/hugr/pull/872))
+- [**breaking**] Cleaner error on wiring errors while building ([#873](https://github.com/Cobord/hugr/pull/873))
+- [**breaking**] Change sums to be over TypeRows rather than Types ([#863](https://github.com/Cobord/hugr/pull/863))
+- Make various data publicly accessible ([#875](https://github.com/Cobord/hugr/pull/875))
+- [**breaking**] CustomConst is not restricted to being CustomType ([#878](https://github.com/Cobord/hugr/pull/878))
+- [**breaking**] Return the type of FuncDecl in `HugrView::get_function_type` ([#880](https://github.com/Cobord/hugr/pull/880))
+- [**breaking**] Merge `Value` into `Const` ([#881](https://github.com/Cobord/hugr/pull/881))
+
+### Refactor
+
+- Extension Inference: make fewer things public, rm Meta::new ([#883](https://github.com/Cobord/hugr/pull/883))
+- [**breaking**] Return impl trait in Rewrite trait ([#889](https://github.com/Cobord/hugr/pull/889))
+
 ## 0.2.0 (2024-02-20)
 
 ### Documentation
