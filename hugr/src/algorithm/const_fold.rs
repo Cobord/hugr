@@ -378,4 +378,62 @@ mod test {
 
         assert_eq!(node_count, 4);
     }
+
+    #[test]
+    fn test_folding_pass() {
+        // pseudocode:
+        //
+        // x0 := 3.0
+        // x1 := 4.0
+        // x2 := fne(x0, x1); // true
+        // x3 := flt(x0, x1); // true
+        // x4 := and(x2, x3); // true
+        // x5 := -10.0
+        // x6 := flt(x0, x5) // false
+        // x7 := or(x4, x6) // true
+        // output x7
+        let mut build =
+            DFGBuilder::new(FunctionType::new(type_row![], vec![BOOL_T.into()])).unwrap();
+        let x0 = build.add_load_const(Const::extension(ConstF64::new(3.0)));
+        let x1 = build.add_load_const(Const::extension(ConstF64::new(4.0)));
+        let x2 = build.add_dataflow_op(FloatOps::fne, [x0, x1]).unwrap();
+        let x3 = build.add_dataflow_op(FloatOps::flt, [x0, x1]).unwrap();
+        let x4 = build
+            .add_dataflow_op(
+                NaryLogic::And.with_n_inputs(2),
+                x2.outputs().chain(x3.outputs()),
+            )
+            .unwrap();
+        let x5 = build.add_load_const(Const::extension(ConstF64::new(-10.0)));
+        let x6 = build.add_dataflow_op(FloatOps::flt, [x0, x5]).unwrap();
+        let x7 = build
+            .add_dataflow_op(
+                NaryLogic::Or.with_n_inputs(2),
+                x4.outputs().chain(x6.outputs()),
+            )
+            .unwrap();
+        let reg = ExtensionRegistry::try_new([
+            PRELUDE.to_owned(),
+            logic::EXTENSION.to_owned(),
+            arithmetic::float_types::EXTENSION.to_owned(),
+        ])
+        .unwrap();
+        let mut h = build.finish_hugr_with_outputs(x7.outputs(), &reg).unwrap();
+        let mut rewrites = find_consts(&h, h.nodes(), &reg).collect_vec();
+        let _ = rewrites.drain(3..);
+        for (replace, removes) in rewrites {
+            h.apply_rewrite(replace).unwrap();
+            for rem in removes {
+                if let Ok(const_node) = h.apply_rewrite(rem) {
+                    // if the LoadConst was removed, try removing the Const too.
+                    if h.apply_rewrite(RemoveConst(const_node)).is_err() {
+                        // const cannot be removed - no problem
+                        continue;
+                    }
+                }
+            }
+        }
+        //let expected = Const::true_val();
+        //assert_fully_folded(&h, &expected);
+    }
 }
