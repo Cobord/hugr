@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.4.0 (2024-05-07)
+
+### Bug Fixes
+
+- Serialization round-trips ([#948](https://github.com/Cobord/hugr/pull/948))
+- [**breaking**] Combine `ConstIntU` and `ConstIntS` ([#974](https://github.com/Cobord/hugr/pull/974))
+- Disable serialisation tests when miri is active ([#977](https://github.com/Cobord/hugr/pull/977))
+- [**breaking**] Serialisation schema ([#968](https://github.com/Cobord/hugr/pull/968))
+- Correct constant fold for `fne`. ([#995](https://github.com/Cobord/hugr/pull/995))
+- [**breaking**] Serialisation fixes ([#997](https://github.com/Cobord/hugr/pull/997))
+
+### Documentation
+
+- Specify direct children in `HugrView::children` ([#921](https://github.com/Cobord/hugr/pull/921))
+- Add logo svg to readme and spec ([#925](https://github.com/Cobord/hugr/pull/925))
+
+### Features
+
+- [**breaking**] Rename crate to `hugr` ([#914](https://github.com/Cobord/hugr/pull/914))
+- [**breaking**] No polymorphic closures ([#906](https://github.com/Cobord/hugr/pull/906))
+- [**breaking**] Flatten `LeafOp` ([#922](https://github.com/Cobord/hugr/pull/922))
+- 'Replace' rewrite returns node map ([#929](https://github.com/Cobord/hugr/pull/929))
+- `new` methods for leaf ops ([#940](https://github.com/Cobord/hugr/pull/940))
+- Add `string` type and `print` function to `prelude` ([#942](https://github.com/Cobord/hugr/pull/942))
+- `CustomOp::extension` utility function ([#951](https://github.com/Cobord/hugr/pull/951))
+- [**breaking**] Add `non_exhaustive` to various enums ([#952](https://github.com/Cobord/hugr/pull/952))
+- Encoder metadata in serialized hugr ([#955](https://github.com/Cobord/hugr/pull/955))
+- [**breaking**] Bring back Value ([#967](https://github.com/Cobord/hugr/pull/967))
+- Add LoadFunction node ([#947](https://github.com/Cobord/hugr/pull/947))
+
+### Refactor
+
+- Combine ExtensionSolutions (no separate closure) ([#884](https://github.com/Cobord/hugr/pull/884))
+- [**breaking**] Merge `CustomOp` and `ExternalOp`. ([#923](https://github.com/Cobord/hugr/pull/923))
+- Outline hugr::serialize::test ([#976](https://github.com/Cobord/hugr/pull/976))
+- [**breaking**] Replace SmolStr identifiers with wrapper types. ([#959](https://github.com/Cobord/hugr/pull/959))
+
+### Testing
+
+- Add a test of instantiating an extension set ([#939](https://github.com/Cobord/hugr/pull/939))
+- Ignore serialisation tests when using miri ([#975](https://github.com/Cobord/hugr/pull/975))
+- [**breaking**] Test roundtrip serialisation against strict + lax schema ([#982](https://github.com/Cobord/hugr/pull/982))
+- Fix some bad assert_matches ([#1006](https://github.com/Cobord/hugr/pull/1006))
+
+
 ## 0.3.1 (2024-04-23)
 
 ### Features
