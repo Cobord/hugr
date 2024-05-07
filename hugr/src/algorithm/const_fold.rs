@@ -393,8 +393,8 @@ mod test {
         // output x7
         let mut build =
             DFGBuilder::new(FunctionType::new(type_row![], vec![BOOL_T.into()])).unwrap();
-        let x0 = build.add_load_const(Const::extension(ConstF64::new(3.0)));
-        let x1 = build.add_load_const(Const::extension(ConstF64::new(4.0)));
+        let x0 = build.add_load_const(Value::extension(ConstF64::new(3.0)));
+        let x1 = build.add_load_const(Value::extension(ConstF64::new(4.0)));
         let x2 = build.add_dataflow_op(FloatOps::fne, [x0, x1]).unwrap();
         let x3 = build.add_dataflow_op(FloatOps::flt, [x0, x1]).unwrap();
         let x4 = build
@@ -403,7 +403,7 @@ mod test {
                 x2.outputs().chain(x3.outputs()),
             )
             .unwrap();
-        let x5 = build.add_load_const(Const::extension(ConstF64::new(-10.0)));
+        let x5 = build.add_load_const(Value::extension(ConstF64::new(-10.0)));
         let x6 = build.add_dataflow_op(FloatOps::flt, [x0, x5]).unwrap();
         let x7 = build
             .add_dataflow_op(
