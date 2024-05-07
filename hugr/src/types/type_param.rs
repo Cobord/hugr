@@ -124,6 +124,12 @@ impl From<TypeBound> for TypeParam {
     }
 }
 
+impl From<UpperBound> for TypeParam {
+    fn from(bound: UpperBound) -> Self {
+        Self::BoundedNat { bound }
+    }
+}
+
 impl From<Type> for TypeArg {
     fn from(ty: Type) -> Self {
         Self::Type { ty }
@@ -148,6 +154,7 @@ pub enum TypeArg {
     ///Instance of [TypeParam::Opaque] An opaque value, stored as serialized blob.
     Opaque {
         #[allow(missing_docs)]
+        #[serde(flatten)]
         arg: CustomTypeArg,
     },
     /// Instance of [TypeParam::List] or [TypeParam::Tuple], defined by a
@@ -165,6 +172,7 @@ pub enum TypeArg {
     /// or [TypeArg::Extensions] - see [TypeArg::new_var_use]
     Variable {
         #[allow(missing_docs)]
+        #[serde(flatten)]
         v: TypeArgVariable,
     },
 }
@@ -178,7 +186,7 @@ pub struct TypeArgVariable {
 
 impl TypeArg {
     /// Makes a TypeArg representing a use (occurrence) of the type variable
-    /// with the specified DeBruijn index. For use within type schemes only:
+    /// with the specified index. For use within type schemes only:
     /// `bound` must match that with which the variable was declared.
     pub fn new_var_use(idx: usize, decl: TypeParam) -> Self {
         match decl {
@@ -224,7 +232,7 @@ impl TypeArg {
         }
     }
 
-    pub(crate) fn substitute(&self, t: &impl Substitution) -> Self {
+    pub(crate) fn substitute(&self, t: &Substitution) -> Self {
         match self {
             TypeArg::Type { ty } => TypeArg::Type {
                 ty: ty.substitute(t),
@@ -340,6 +348,7 @@ pub fn check_type_args(args: &[TypeArg], params: &[TypeParam]) -> Result<(), Typ
 
 /// Errors that can occur fitting a [TypeArg] into a [TypeParam]
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum TypeArgError {
     #[allow(missing_docs)]
     /// For now, general case of a type arg not fitting a param.

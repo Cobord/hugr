@@ -36,14 +36,12 @@
 //! // The type of qubits, `QB_T` is in the prelude but, by default, no gateset
 //! // is defined. This module provides Hadamard and CX gates.
 //! mod mini_quantum_extension {
-//!     use smol_str::SmolStr;
-//!
 //!     use hugr::{
 //!         extension::{
 //!             prelude::{BOOL_T, QB_T},
 //!             ExtensionId, ExtensionRegistry, PRELUDE,
 //!         },
-//!         ops::LeafOp,
+//!         ops::{CustomOp, OpName},
 //!         type_row,
 //!         types::{FunctionType, PolyFuncType},
 //!         Extension,
@@ -64,16 +62,16 @@
 //!         let mut extension = Extension::new(EXTENSION_ID);
 //!
 //!         extension
-//!             .add_op(SmolStr::new_inline("H"), "Hadamard".into(), one_qb_func())
+//!             .add_op(OpName::new_inline("H"), "Hadamard".into(), one_qb_func())
 //!             .unwrap();
 //!
 //!         extension
-//!             .add_op(SmolStr::new_inline("CX"), "CX".into(), two_qb_func())
+//!             .add_op(OpName::new_inline("CX"), "CX".into(), two_qb_func())
 //!             .unwrap();
 //!
 //!         extension
 //!             .add_op(
-//!                 SmolStr::new_inline("Measure"),
+//!                 OpName::new_inline("Measure"),
 //!                 "Measure a qubit, returning the qubit and the measurement result.".into(),
 //!                 FunctionType::new(type_row![QB_T], type_row![QB_T, BOOL_T]),
 //!             )
@@ -89,21 +87,21 @@
 //!             ExtensionRegistry::try_new([EXTENSION.to_owned(), PRELUDE.to_owned()]).unwrap();
 //!
 //!     }
-//!     fn get_gate(gate_name: &str) -> LeafOp {
+//!     fn get_gate(gate_name: impl Into<OpName>) -> CustomOp {
 //!         EXTENSION
-//!             .instantiate_extension_op(gate_name, [], &REG)
+//!             .instantiate_extension_op(&gate_name.into(), [], &REG)
 //!             .unwrap()
 //!             .into()
 //!     }
-//!     pub fn h_gate() -> LeafOp {
+//!     pub fn h_gate() -> CustomOp {
 //!         get_gate("H")
 //!     }
 //!
-//!     pub fn cx_gate() -> LeafOp {
+//!     pub fn cx_gate() -> CustomOp {
 //!         get_gate("CX")
 //!     }
 //!
-//!     pub fn measure() -> LeafOp {
+//!     pub fn measure() -> CustomOp {
 //!         get_gate("Measure")
 //!     }
 //! }

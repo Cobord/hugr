@@ -9,14 +9,14 @@ use crate::builder::{
 use crate::extension::prelude::{BOOL_T, PRELUDE, USIZE_T};
 use crate::extension::{Extension, ExtensionId, TypeDefBound, EMPTY_REG, PRELUDE_REGISTRY};
 use crate::hugr::hugrmut::sealed::HugrMutInternals;
-use crate::hugr::{HugrMut, NodeType};
+use crate::hugr::HugrMut;
 use crate::ops::dataflow::IOTrait;
-use crate::ops::{self, Const, LeafOp, OpType};
+use crate::ops::{self, Noop, Value};
 use crate::std_extensions::logic::test::{and_op, or_op};
 use crate::std_extensions::logic::{self, NotOp};
-use crate::types::type_param::{TypeArg, TypeArgError, TypeParam};
+use crate::types::type_param::{TypeArg, TypeArgError};
 use crate::types::{CustomType, FunctionType, PolyFuncType, Type, TypeBound, TypeRow};
-use crate::{type_row, Direction, IncomingPort, Node};
+use crate::{type_row, IncomingPort};
 
 const NAT: Type = crate::extension::prelude::USIZE_T;
 
@@ -45,7 +45,7 @@ fn make_simple_hugr(copies: usize) -> (Hugr, Node) {
 fn add_df_children(b: &mut Hugr, parent: Node, copies: usize) -> (Node, Node, Node) {
     let input = b.add_node_with_parent(parent, ops::Input::new(type_row![BOOL_T]));
     let output = b.add_node_with_parent(parent, ops::Output::new(vec![BOOL_T; copies]));
-    let copy = b.add_node_with_parent(parent, LeafOp::Noop { ty: BOOL_T });
+    let copy = b.add_node_with_parent(parent, Noop { ty: BOOL_T });
 
     b.connect(input, 0, copy, 0);
     for i in 0..copies {
@@ -91,7 +91,7 @@ fn invalid_root() {
 
 #[test]
 fn leaf_root() {
-    let leaf_op: OpType = LeafOp::Noop { ty: USIZE_T }.into();
+    let leaf_op: OpType = Noop { ty: USIZE_T }.into();
 
     let b = Hugr::new(NodeType::new_pure(leaf_op));
     assert_eq!(b.validate(&EMPTY_REG), Ok(()));
@@ -149,14 +149,14 @@ fn children_restrictions() {
         b.update_validate(&EMPTY_REG),
         Err(ValidationError::NonContainerWithChildren { node, .. }) => assert_eq!(node, copy)
     );
-    let closure = b.infer_extensions().unwrap();
+    b.infer_extensions().unwrap();
     b.set_parent(new_def, root);
 
     // After moving the previous definition to a valid place,
     // add an input node to the module subgraph
     let new_input = b.add_node_with_parent(root, ops::Input::new(type_row![]));
     assert_matches!(
-        b.validate_with_extension_closure(closure, &EMPTY_REG),
+        b.validate(&EMPTY_REG),
         Err(ValidationError::InvalidParentOp { parent, child, .. }) => {assert_eq!(parent, root); assert_eq!(child, new_input)}
     );
 }
@@ -173,7 +173,7 @@ fn df_children_restrictions() {
         .unwrap();
 
     // Replace the output operation of the df subgraph with a copy
-    b.replace_op(output, NodeType::new_pure(LeafOp::Noop { ty: NAT }))
+    b.replace_op(output, NodeType::new_pure(Noop { ty: NAT }))
         .unwrap();
     assert_matches!(
         b.validate(&EMPTY_REG),
@@ -271,10 +271,11 @@ fn test_local_const() {
         })
     );
     let const_op: ops::Const = logic::EXTENSION
-        .get_value(logic::TRUE_NAME)
+        .get_value(&logic::TRUE_NAME)
         .unwrap()
         .typed_value()
-        .clone();
+        .clone()
+        .into();
     // Second input of Xor from a constant
     let cst = h.add_node_with_parent(h.root(), const_op);
     let lcst = h.add_node_with_parent(h.root(), ops::LoadConstant { datatype: BOOL_T });
@@ -497,7 +498,7 @@ fn nested_typevars() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert_matches!(build(Type::new_var_use(0, OUTER_BOUND)).unwrap_err(),
         BuildError::InvalidHUGR(ValidationError::SignatureError { cause: SignatureError::TypeVarDoesNotMatchDeclaration { actual, cached }, .. }) =>
-        actual == INNER_BOUND.into() && cached == OUTER_BOUND.into());
+        {assert_eq!(actual, INNER_BOUND.into()); assert_eq!(cached, OUTER_BOUND.into())});
     Ok(())
 }
 
@@ -522,7 +523,7 @@ fn no_polymorphic_consts() -> Result<(), Box<dyn std::error::Error>> {
                 .with_extension_delta(collections::EXTENSION_NAME),
         ),
     )?;
-    let empty_list = Const::extension(collections::ListValue::new_empty(Type::new_var_use(
+    let empty_list = Value::extension(collections::ListValue::new_empty(Type::new_var_use(
         0,
         TypeBound::Copyable,
     )));
@@ -558,10 +559,30 @@ fn test_polymorphic_call() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn test_polymorphic_load() -> Result<(), Box<dyn std::error::Error>> {
+    let mut m = ModuleBuilder::new();
+    let id = m.declare(
+        "id",
+        PolyFuncType::new(
+            vec![TypeBound::Any.into()],
+            FunctionType::new_endo(vec![Type::new_var_use(0, TypeBound::Any)]),
+        ),
+    )?;
+    let sig = FunctionType::new(
+        vec![],
+        vec![Type::new_function(FunctionType::new_endo(vec![USIZE_T]))],
+    );
+    let mut f = m.define_function("main", sig.into())?;
+    let l = f.load_func(&id, &[USIZE_T.into()], &PRELUDE_REGISTRY)?;
+    f.finish_with_outputs([l])?;
+    let _ = m.finish_prelude_hugr()?;
+    Ok(())
+}
+
 #[cfg(feature = "extension_inference")]
 mod extension_tests {
     use super::*;
-    use crate::builder::ModuleBuilder;
     use crate::extension::ExtensionSet;
     use crate::macros::const_extension_ids;
 
@@ -578,8 +599,9 @@ mod extension_tests {
     ///
     /// Returns the node indices of each of the operations.
     fn add_block_children(b: &mut Hugr, parent: Node, sum_size: usize) -> (Node, Node, Node, Node) {
-        let const_op =
-            ops::Const::unit_sum(0, sum_size as u8).expect("`sum_size` must be greater than 0");
+        let const_op: ops::Const = ops::Value::unit_sum(0, sum_size as u8)
+            .expect("`sum_size` must be greater than 0")
+            .into();
         let tag_type = Type::new_unit_sum(sum_size as u8);
 
         let input = b.add_node_with_parent(parent, ops::Input::new(type_row![BOOL_T]));
@@ -608,8 +630,7 @@ mod extension_tests {
             .unwrap();
         // Write Extension annotations into the Hugr while it's still well-formed
         // enough for us to compute them
-        let closure = b.infer_extensions().unwrap();
-        b.instantiate_extensions(closure);
+        b.infer_extensions().unwrap();
         b.validate(&EMPTY_REG).unwrap();
         b.replace_op(
             copy,
@@ -717,7 +738,7 @@ mod extension_tests {
 
         let lift = hugr.add_node_with_parent(
             hugr.root(),
-            NodeType::new_pure(ops::LeafOp::Lift {
+            NodeType::new_pure(ops::Lift {
                 type_row: type_row![USIZE_T],
                 new_extension: XB,
             }),

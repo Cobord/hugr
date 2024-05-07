@@ -1,7 +1,7 @@
 use crate::hugr::hugrmut::InsertionResult;
 use crate::hugr::views::HugrView;
 use crate::hugr::{NodeMetadata, ValidationError};
-use crate::ops::{self, LeafOp, OpTag, OpTrait, OpType};
+use crate::ops::{self, MakeTuple, OpTag, OpTrait, OpType, Tag};
 use crate::utils::collect_array;
 use crate::{IncomingPort, Node, OutgoingPort};
 
@@ -375,6 +375,46 @@ pub trait Dataflow: Container {
         self.load_const(&cid)
     }
 
+    /// Load a [`ops::Value`] and return the local dataflow wire for that constant.
+    /// Adds a [`ops::Const`] and a [`ops::LoadConstant`] node.
+    fn add_load_value(&mut self, constant: impl Into<ops::Value>) -> Wire {
+        self.add_load_const(constant.into())
+    }
+
+    /// Load a static function and return the local dataflow wire for that function.
+    /// Adds a [`OpType::LoadFunction`] node.
+    ///
+    /// The `DEF` const generic is used to indicate whether the function is defined
+    /// or just declared.
+    fn load_func<const DEFINED: bool>(
+        &mut self,
+        fid: &FuncID<DEFINED>,
+        type_args: &[TypeArg],
+        // Sadly required as we substituting in type_args may result in recomputing bounds of types:
+        exts: &ExtensionRegistry,
+    ) -> Result<Wire, BuildError> {
+        let func_node = fid.node();
+        let func_op = self.hugr().get_nodetype(func_node).op();
+        let func_sig = match func_op {
+            OpType::FuncDefn(ops::FuncDefn { signature, .. })
+            | OpType::FuncDecl(ops::FuncDecl { signature, .. }) => signature.clone(),
+            _ => {
+                return Err(BuildError::UnexpectedType {
+                    node: func_node,
+                    op_desc: "FuncDecl/FuncDefn",
+                })
+            }
+        };
+
+        let load_n = self.add_dataflow_op(
+            ops::LoadFunction::try_new(func_sig, type_args, exts)?,
+            // Static wire from the function node
+            vec![Wire::new(func_node, func_op.static_output_port().unwrap())],
+        )?;
+
+        Ok(load_n.out_wire(0))
+    }
+
     /// Return a builder for a [`crate::ops::TailLoop`] node.
     /// The `inputs` must be an iterable over pairs of the type of the input and
     /// the corresponding wire.
@@ -471,13 +511,13 @@ pub trait Dataflow: Container {
         }
     }
 
-    /// Add a [`LeafOp::MakeTuple`] node and wire in the `values` Wires,
+    /// Add a [`MakeTuple`] node and wire in the `values` Wires,
     /// returning the Wire corresponding to the tuple.
     ///
     /// # Errors
     ///
     /// This function will return an error if there is an error adding the
-    /// [`LeafOp::MakeTuple`] node.
+    /// [`MakeTuple`] node.
     fn make_tuple(&mut self, values: impl IntoIterator<Item = Wire>) -> Result<Wire, BuildError> {
         let values = values.into_iter().collect_vec();
         let types: Result<Vec<Type>, _> = values
@@ -485,11 +525,11 @@ pub trait Dataflow: Container {
             .map(|&wire| self.get_wire_type(wire))
             .collect();
         let types = types?.into();
-        let make_op = self.add_dataflow_op(LeafOp::MakeTuple { tys: types }, values)?;
+        let make_op = self.add_dataflow_op(MakeTuple { tys: types }, values)?;
         Ok(make_op.out_wire(0))
     }
 
-    /// Add a [`LeafOp::Tag`] node and wire in the `value` Wire,
+    /// Add a [`Tag`] node and wire in the `value` Wire,
     /// to make a value with Sum type, with `tag` and possible types described
     /// by `variants`.
     /// Returns the Wire corresponding to the Sum value.
@@ -505,7 +545,7 @@ pub trait Dataflow: Container {
         values: impl IntoIterator<Item = Wire>,
     ) -> Result<Wire, BuildError> {
         let make_op = self.add_dataflow_op(
-            LeafOp::Tag {
+            Tag {
                 tag,
                 variants: variants.into_iter().map(Into::into).collect_vec(),
             },

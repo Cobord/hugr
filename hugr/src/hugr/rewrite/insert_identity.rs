@@ -3,7 +3,7 @@
 use std::iter;
 
 use crate::hugr::{HugrMut, Node};
-use crate::ops::{LeafOp, OpTag, OpTrait};
+use crate::ops::{Noop, OpTag, OpTrait};
 use crate::types::EdgeKind;
 use crate::{HugrView, IncomingPort};
 
@@ -32,6 +32,7 @@ impl IdentityInsertion {
 
 /// Error from an [`IdentityInsertion`] operation.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum IdentityInsertionError {
     /// Invalid parent node.
     #[error("Parent node is invalid.")]
@@ -79,7 +80,7 @@ impl Rewrite for IdentityInsertion {
         if !OpTag::DataflowParent.is_superset(h.get_optype(parent).tag()) {
             return Err(IdentityInsertionError::InvalidParentNode);
         }
-        let new_node = h.add_node_with_parent(parent, LeafOp::Noop { ty });
+        let new_node = h.add_node_with_parent(parent, Noop { ty });
         h.connect(pre_node, pre_port, new_node, 0);
 
         h.connect(new_node, 0, self.post_node, self.post_port);
@@ -102,7 +103,7 @@ mod tests {
         algorithm::nest_cfgs::test::build_conditional_in_loop_cfg,
         extension::{prelude::QB_T, PRELUDE_REGISTRY},
         ops::handle::NodeHandle,
-        Hugr, HugrView,
+        Hugr,
     };
 
     #[rstest]
@@ -124,9 +125,9 @@ mod tests {
 
         assert_eq!(h.node_count(), 7);
 
-        let noop: LeafOp = h.get_optype(noop_node).clone().try_into().unwrap();
+        let noop: Noop = h.get_optype(noop_node).clone().try_into().unwrap();
 
-        assert_eq!(noop, LeafOp::Noop { ty: QB_T });
+        assert_eq!(noop, Noop { ty: QB_T });
 
         h.update_validate(&PRELUDE_REGISTRY).unwrap();
     }

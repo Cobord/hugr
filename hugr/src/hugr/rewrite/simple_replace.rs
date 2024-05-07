@@ -181,6 +181,7 @@ impl Rewrite for SimpleReplacement {
 
 /// Error from a [`SimpleReplacement`] operation.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SimpleReplacementError {
     /// Invalid parent node.
     #[error("Parent node is invalid.")]
@@ -209,7 +210,7 @@ pub(in crate::hugr::rewrite) mod test {
     use crate::hugr::{Hugr, HugrMut, Rewrite};
     use crate::ops::dataflow::DataflowOpTrait;
     use crate::ops::OpTag;
-    use crate::ops::{OpTrait, OpType};
+    use crate::ops::OpTrait;
     use crate::std_extensions::logic::test::and_op;
     use crate::type_row;
     use crate::types::{FunctionType, Type};
@@ -337,7 +338,7 @@ pub(in crate::hugr::rewrite) mod test {
         // 1. Locate the CX and its successor H's in h
         let h_node_cx: Node = h
             .nodes()
-            .find(|node: &Node| *h.get_optype(*node) == OpType::LeafOp(cx_gate()))
+            .find(|node: &Node| *h.get_optype(*node) == cx_gate().into())
             .unwrap();
         let (h_node_h0, h_node_h1) = h.output_neighbours(h_node_cx).collect_tuple().unwrap();
         let s: Vec<Node> = vec![h_node_cx, h_node_h0, h_node_h1].into_iter().collect();
@@ -347,7 +348,7 @@ pub(in crate::hugr::rewrite) mod test {
         // 3.1. Locate the CX and its predecessor H's in n
         let n_node_cx = n
             .nodes()
-            .find(|node: &Node| *n.get_optype(*node) == OpType::LeafOp(cx_gate()))
+            .find(|node: &Node| *n.get_optype(*node) == cx_gate().into())
             .unwrap();
         let (n_node_h0, n_node_h1) = n.input_neighbours(n_node_cx).collect_tuple().unwrap();
         // 3.2. Locate the ports we need to specify as "glue" in n
@@ -415,7 +416,7 @@ pub(in crate::hugr::rewrite) mod test {
         // 1. Locate the CX in h
         let h_node_cx: Node = h
             .nodes()
-            .find(|node: &Node| *h.get_optype(*node) == OpType::LeafOp(cx_gate()))
+            .find(|node: &Node| *h.get_optype(*node) == cx_gate().into())
             .unwrap();
         let s: Vec<Node> = vec![h_node_cx].into_iter().collect();
         // 2. Construct a new DFG-rooted hugr for the replacement
@@ -635,6 +636,6 @@ pub(in crate::hugr::rewrite) mod test {
     }
 
     fn apply_replace(h: &mut Hugr, rw: SimpleReplacement) {
-        h.apply_rewrite(to_replace(h, rw)).unwrap()
+        h.apply_rewrite(to_replace(h, rw)).unwrap();
     }
 }

@@ -4,18 +4,19 @@ use super::*;
 use crate::builder::{
     Container, DFGBuilder, Dataflow, DataflowHugr, DataflowSubContainer, HugrBuilder, ModuleBuilder,
 };
+use crate::extension::prelude::PRELUDE_REGISTRY;
 use crate::extension::prelude::QB_T;
 use crate::extension::ExtensionId;
-use crate::extension::{prelude::PRELUDE_REGISTRY, ExtensionSet};
-use crate::hugr::{Hugr, HugrMut, HugrView, NodeType};
+use crate::hugr::{Hugr, HugrMut, NodeType};
 use crate::macros::const_extension_ids;
-use crate::ops::custom::{ExternalOp, OpaqueOp};
+use crate::ops::custom::OpaqueOp;
 use crate::ops::{self, dataflow::IOTrait};
-use crate::ops::{LeafOp, OpType};
+use crate::ops::{CustomOp, Lift, OpType};
 #[cfg(feature = "extension_inference")]
 use crate::{
     builder::test::closed_dfg_root_hugr,
-    hugr::validate::ValidationError,
+    extension::prelude::PRELUDE_ID,
+    hugr::{hugrmut::sealed::HugrMutInternals, validate::ValidationError},
     ops::{dataflow::DataflowParent, handle::NodeHandle},
 };
 
@@ -100,13 +101,13 @@ fn from_graph() -> Result<(), Box<dyn Error>> {
 
     hugr.connect(mult_c, 0, output, 0);
 
-    let (_, closure) = infer_extensions(&hugr)?;
+    let solution = infer_extensions(&hugr)?;
     let empty = ExtensionSet::new();
     let ab = ExtensionSet::from_iter([A, B]);
-    assert_eq!(*closure.get(&(hugr.root())).unwrap(), empty);
-    assert_eq!(*closure.get(&(mult_c)).unwrap(), ab);
-    assert_eq!(*closure.get(&(add_ab)).unwrap(), empty);
-    assert_eq!(*closure.get(&add_b).unwrap(), ExtensionSet::singleton(&A));
+    assert_eq!(*solution.get(&(hugr.root())).unwrap(), empty);
+    assert_eq!(*solution.get(&(mult_c)).unwrap(), ab);
+    assert_eq!(*solution.get(&(add_ab)).unwrap(), empty);
+    assert_eq!(*solution.get(&add_b).unwrap(), ExtensionSet::singleton(&A));
     Ok(())
 }
 
@@ -249,8 +250,7 @@ fn dangling_src() -> Result<(), Box<dyn Error>> {
     hugr.connect(src, 0, mult, 1);
     hugr.connect(mult, 0, output, 0);
 
-    let closure = hugr.infer_extensions()?;
-    assert!(closure.is_empty());
+    hugr.infer_extensions()?;
     assert_eq!(hugr.get_nodetype(src.node()).io_extensions().unwrap().1, rs);
     assert_eq!(
         hugr.get_nodetype(mult.node()).io_extensions().unwrap(),
@@ -316,7 +316,7 @@ fn test_conditional_inference() -> Result<(), Box<dyn Error>> {
 
         let lift1 = hugr.add_node_with_parent(
             case,
-            ops::LeafOp::Lift {
+            Lift {
                 type_row: type_row![NAT],
                 new_extension: first_ext,
             },
@@ -324,7 +324,7 @@ fn test_conditional_inference() -> Result<(), Box<dyn Error>> {
 
         let lift2 = hugr.add_node_with_parent(
             case,
-            ops::LeafOp::Lift {
+            Lift {
                 type_row: type_row![NAT],
                 new_extension: second_ext,
             },
@@ -416,7 +416,7 @@ fn extension_adding_sequence() -> Result<(), Box<dyn Error>> {
 
             let lift = hugr.add_node_with_parent(
                 node,
-                ops::LeafOp::Lift {
+                Lift {
                     type_row: type_row![NAT],
                     new_extension: ext,
                 },
@@ -438,9 +438,8 @@ fn extension_adding_sequence() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn make_opaque(extension: impl Into<ExtensionId>, signature: FunctionType) -> ops::LeafOp {
-    let opaque = ops::custom::OpaqueOp::new(extension.into(), "", "".into(), vec![], signature);
-    ops::custom::ExternalOp::from(opaque).into()
+fn make_opaque(extension: impl Into<ExtensionId>, signature: FunctionType) -> CustomOp {
+    ops::custom::OpaqueOp::new(extension.into(), "", "".into(), vec![], signature).into()
 }
 
 fn make_block(
@@ -796,6 +795,81 @@ fn test_cfg_loops() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[cfg(feature = "extension_inference")]
+fn test_validate_with_closure() -> Result<(), Box<dyn Error>> {
+    fn dfg_hugr_with_exts(e: Option<ExtensionSet>) -> (Hugr, Node, Node) {
+        let mut h = closed_dfg_root_hugr(FunctionType::new_endo(type_row![QB_T]));
+        h.replace_op(h.root(), NodeType::new(h.get_optype(h.root()).clone(), e))
+            .unwrap();
+        let [input, output] = h.get_io(h.root()).unwrap();
+        (h, input, output)
+    }
+    fn identity_hugr_with_exts(e: Option<ExtensionSet>) -> Hugr {
+        let (mut h, input, output) = dfg_hugr_with_exts(e);
+        h.connect(input, 0, output, 0);
+        h
+    }
+
+    const EXT_ID: ExtensionId = ExtensionId::new_unchecked("foo");
+
+    let inner_open = identity_hugr_with_exts(None);
+
+    let inner_prelude = identity_hugr_with_exts(Some(ExtensionSet::singleton(&PRELUDE_ID)));
+
+    let inner_other = identity_hugr_with_exts(Some(ExtensionSet::singleton(&EXT_ID)));
+
+    // All three can be inferred and validated, without writing solutions in:
+    for inner in [&inner_open, &inner_prelude, &inner_other] {
+        assert_matches!(
+            inner.validate(&PRELUDE_REGISTRY),
+            Err(ValidationError::ExtensionError(_))
+        );
+
+        let soln = infer_extensions(inner)?;
+        inner.validate_with_extension_closure(soln, &PRELUDE_REGISTRY)?;
+    }
+
+    // Helper builds a Hugr with extensions {PRELUDE_ID}, around argument
+    let build_outer_prelude = |inner: Hugr| -> Hugr {
+        let (mut h, input, output) = dfg_hugr_with_exts(Some(ExtensionSet::singleton(&PRELUDE_ID)));
+        let inner_node = h.insert_hugr(h.root(), inner).new_root;
+        h.connect(input, 0, inner_node, 0);
+        h.connect(inner_node, 0, output, 0);
+        h
+    };
+
+    // Building a Hugr around the inner DFG works if the inner DFG is open,
+    // or has the correct (prelude) extensions:
+    for inner in [&inner_open, &inner_prelude] {
+        let mut h = build_outer_prelude(inner.clone());
+        h.update_validate(&PRELUDE_REGISTRY)?;
+    }
+
+    // ...but fails if the inner DFG already has the 'wrong' extensions:
+    assert_matches!(
+        build_outer_prelude(inner_other.clone()).update_validate(&PRELUDE_REGISTRY),
+        Err(ValidationError::CantInfer(_))
+    );
+
+    // If we do inference on the inner Hugr first, this (still) works if the
+    // inner DFG already had the correct input-extensions:
+    let mut inner_prelude_inferred = inner_prelude;
+    inner_prelude_inferred.update_validate(&PRELUDE_REGISTRY)?;
+    build_outer_prelude(inner_prelude_inferred).update_validate(&PRELUDE_REGISTRY)?;
+
+    // But fails for previously-open inner DFG as inference
+    // infers an incorrect (empty) solution:
+    let mut inner_inferred = inner_open;
+    inner_inferred.update_validate(&PRELUDE_REGISTRY)?;
+    assert_matches!(
+        build_outer_prelude(inner_inferred).update_validate(&PRELUDE_REGISTRY),
+        Err(ValidationError::CantInfer(_))
+    );
+
+    Ok(())
+}
+
+#[test]
 /// A control flow graph consisting of an entry node and a single block
 /// which adds a resource and links to both itself and the exit node.
 fn simple_cfg_loop() -> Result<(), Box<dyn Error>> {
@@ -855,23 +929,21 @@ fn plus_on_self() -> Result<(), Box<dyn std::error::Error>> {
     // While https://github.com/CQCL/hugr/issues/388 is unsolved,
     // most operations have empty extension_reqs (not including their own extension).
     // Define some that do.
-    let binop: LeafOp = ExternalOp::Opaque(OpaqueOp::new(
+    let binop = CustomOp::new_opaque(OpaqueOp::new(
         ext.clone(),
         "2qb_op",
         String::new(),
         vec![],
         ft,
-    ))
-    .into();
+    ));
     let unary_sig = FunctionType::new_endo(type_row![QB_T]).with_extension_delta(ext.clone());
-    let unop: LeafOp = ExternalOp::Opaque(OpaqueOp::new(
+    let unop = CustomOp::new_opaque(OpaqueOp::new(
         ext,
         "1qb_op",
         String::new(),
         vec![],
         unary_sig,
-    ))
-    .into();
+    ));
     // Constrain q1,q2 as PLUS(ext1, inputs):
     let [q1, q2] = dfg
         .add_dataflow_op(binop.clone(), dfg.input_wires())?
@@ -945,7 +1017,7 @@ fn simple_funcdefn() -> Result<(), Box<dyn Error>> {
 
     let [w] = func_builder.input_wires_arr();
     let lift = func_builder.add_dataflow_op(
-        ops::LeafOp::Lift {
+        Lift {
             type_row: type_row![NAT],
             new_extension: A,
         },
@@ -970,7 +1042,7 @@ fn funcdefn_signature_mismatch() -> Result<(), Box<dyn Error>> {
 
     let [w] = func_builder.input_wires_arr();
     let lift = func_builder.add_dataflow_op(
-        ops::LeafOp::Lift {
+        Lift {
             type_row: type_row![NAT],
             new_extension: B,
         },
